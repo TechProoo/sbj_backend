@@ -1,0 +1,473 @@
+// SBJ Foods and Drinks — data model
+// Target: Supabase Postgres. `directUrl` is used for migrations (port 5432),
+// `url` is the pooled connection (port 6543) used at runtime.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------------------------------------------------------------- enums
+
+enum StaffRole {
+  ADMIN
+  MANAGER
+  KITCHEN
+  CASHIER
+}
+
+enum OrderChannel {
+  ONLINE
+  PHONE
+  WALK_IN
+}
+
+enum OrderType {
+  DELIVERY
+  PICKUP
+  DINE_IN
+}
+
+/// Lifecycle of a whole order. The kitchen dashboard advances
+/// CONFIRMED -> PREPARING -> READY; the counter closes it as COMPLETED.
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+}
+
+/// Per-line state so a ticket can be partly plated.
+enum OrderItemStatus {
+  QUEUED
+  PREPARING
+  READY
+  SERVED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PAID
+  REFUNDED
+  FAILED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  TRANSFER
+  ONLINE
+}
+
+enum PaymentProvider {
+  PAYSTACK
+}
+
+// ---------------------------------------------------------------- people
+
+/// Mirrors a Supabase `auth.users` row. `id` IS the Supabase user id, so a
+/// verified JWT sub maps straight onto a staff profile with no extra join.
+model StaffProfile {
+  id        String    @id @db.Uuid
+  email     String    @unique
+  fullName  String    @map("full_name")
+  role      StaffRole @default(KITCHEN)
+  phone     String?
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  claimedOrders Order[]      @relation("OrderClaimedBy")
+  orderEvents   OrderEvent[]
+
+  @@index([role, isActive])
+  @@map("staff_profiles")
+}
+
+/// A customer may be a signed-in Supabase user (authUserId set) or a guest
+/// identified only by phone. Phone is the natural key for repeat guests.
+model Customer {
+  id         String   @id @default(uuid()) @db.Uuid
+  authUserId String?  @unique @map("auth_user_id") @db.Uuid
+  fullName   String   @map("full_name")
+  phone      String   @unique
+  email      String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  addresses Address[]
+  orders    Order[]
+
+  @@map("customers")
+}
+
+model Address {
+  id         String   @id @default(uuid()) @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  label      String?
+  line1      String
+  line2      String?
+  city       String
+  state      String?
+  landmark   String?
+  isDefault  Boolean  @default(false) @map("is_default")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  orders   Order[]
+
+  @@index([customerId])
+  @@map("addresses")
+}
+
+// ---------------------------------------------------------------- menu
+
+model Category {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  imageUrl    String?  @map("image_url")
+  position    Int      @default(0)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  items MenuItem[]
+
+  @@index([isActive, position])
+  @@map("categories")
+}
+
+model MenuItem {
+  id          String   @id @default(uuid()) @db.Uuid
+  categoryId  String   @map("category_id") @db.Uuid
+  name        String
+  slug        String   @unique
+  description String?
+  /// Naira. Decimal, never float — money must not round through binary.
+  price       Decimal  @db.Decimal(10, 2)
+  imageUrl    String?  @map("image_url")
+  /// Minutes the kitchen needs for this item; drives the ticket timer.
+  prepMinutes Int      @default(15) @map("prep_minutes")
+  calories    Int?
+  isAvailable Boolean  @default(true) @map("is_available")
+  isFeatured  Boolean  @default(false) @map("is_featured")
+  spiceLevel  Int      @default(0) @map("spice_level")
+  tags        String[] @default([])
+  position    Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  category       Category                @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  modifierGroups MenuItemModifierGroup[]
+  orderItems     OrderItem[]
+
+  @@index([categoryId, isAvailable])
+  @@index([isFeatured])
+  @@map("menu_items")
+}
+
+/// e.g. "Choose your protein", "Add extras".
+model ModifierGroup {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  description String?
+  minSelect   Int      @default(0) @map("min_select")
+  maxSelect   Int      @default(1) @map("max_select")
+  position    Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  modifiers Modifier[]
+  items     MenuItemModifierGroup[]
+
+  @@map("modifier_groups")
+}
+
+model Modifier {
+  id          String  @id @default(uuid()) @db.Uuid
+  groupId     String  @map("group_id") @db.Uuid
+  name        String
+  priceDelta  Decimal @default(0) @map("price_delta") @db.Decimal(10, 2)
+  isAvailable Boolean @default(true) @map("is_available")
+  position    Int     @default(0)
+
+  group          ModifierGroup       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  orderItemLinks OrderItemModifier[]
+
+  @@index([groupId])
+  @@map("modifiers")
+}
+
+model MenuItemModifierGroup {
+  menuItemId String @map("menu_item_id") @db.Uuid
+  groupId    String @map("group_id") @db.Uuid
+  position   Int    @default(0)
+
+  menuItem MenuItem      @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  group    ModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([menuItemId, groupId])
+  @@map("menu_item_modifier_groups")
+}
+
+// ---------------------------------------------------------------- orders
+
+model Order {
+  id          String @id @default(uuid()) @db.Uuid
+  /// Short human-readable ticket number shouted across the kitchen, e.g. SBJ-2419.
+  orderNumber String @unique @map("order_number")
+
+  customerId String? @map("customer_id") @db.Uuid
+  addressId  String? @map("address_id") @db.Uuid
+
+  /// Denormalised on purpose: a guest order must still be fulfillable if the
+  /// customer record is later edited or removed.
+  customerName  String  @map("customer_name")
+  customerPhone String  @map("customer_phone")
+  customerEmail String? @map("customer_email")
+
+  channel OrderChannel @default(ONLINE)
+  type    OrderType    @default(DELIVERY)
+  status  OrderStatus  @default(PENDING)
+
+  paymentStatus PaymentStatus  @default(UNPAID) @map("payment_status")
+  paymentMethod PaymentMethod? @map("payment_method")
+  paymentRef    String?        @map("payment_ref")
+
+  subtotal    Decimal @db.Decimal(10, 2)
+  deliveryFee Decimal @default(0) @map("delivery_fee") @db.Decimal(10, 2)
+  serviceFee  Decimal @default(0) @map("service_fee") @db.Decimal(10, 2)
+  discount    Decimal @default(0) @db.Decimal(10, 2)
+  total       Decimal @db.Decimal(10, 2)
+
+  notes       String?
+  tableNumber String? @map("table_number")
+
+  /// Set once a cook accepts the ticket; the dashboard clock runs off startedAt.
+  claimedById  String?   @map("claimed_by_id") @db.Uuid
+  placedAt     DateTime  @default(now()) @map("placed_at")
+  confirmedAt  DateTime? @map("confirmed_at")
+  startedAt    DateTime? @map("started_at")
+  readyAt      DateTime? @map("ready_at")
+  completedAt  DateTime? @map("completed_at")
+  cancelledAt  DateTime? @map("cancelled_at")
+  cancelReason String?   @map("cancel_reason")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  customer  Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  address   Address?      @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  claimedBy StaffProfile? @relation("OrderClaimedBy", fields: [claimedById], references: [id], onDelete: SetNull)
+  items     OrderItem[]
+  events    OrderEvent[]
+  payments  Payment[]
+
+  @@index([status, placedAt])
+  @@index([customerPhone])
+  @@index([placedAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id         String @id @default(uuid()) @db.Uuid
+  orderId    String @map("order_id") @db.Uuid
+  menuItemId String @map("menu_item_id") @db.Uuid
+
+  /// Price and name captured at order time — the menu may change afterwards.
+  nameSnapshot String          @map("name_snapshot")
+  unitPrice    Decimal         @map("unit_price") @db.Decimal(10, 2)
+  quantity     Int
+  lineTotal    Decimal         @map("line_total") @db.Decimal(10, 2)
+  notes        String?
+  status       OrderItemStatus @default(QUEUED)
+
+  order     Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem  MenuItem            @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
+  modifiers OrderItemModifier[]
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model OrderItemModifier {
+  id           String  @id @default(uuid()) @db.Uuid
+  orderItemId  String  @map("order_item_id") @db.Uuid
+  modifierId   String  @map("modifier_id") @db.Uuid
+  nameSnapshot String  @map("name_snapshot")
+  priceDelta   Decimal @map("price_delta") @db.Decimal(10, 2)
+
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  modifier  Modifier  @relation(fields: [modifierId], references: [id], onDelete: Restrict)
+
+  @@index([orderItemId])
+  @@map("order_item_modifiers")
+}
+
+/// Append-only audit trail. Every status change lands here so a disputed
+/// ticket can be reconstructed.
+model OrderEvent {
+  id         String       @id @default(uuid()) @db.Uuid
+  orderId    String       @map("order_id") @db.Uuid
+  actorId    String?      @map("actor_id") @db.Uuid
+  fromStatus OrderStatus? @map("from_status")
+  toStatus   OrderStatus  @map("to_status")
+  note       String?
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  order Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  actor StaffProfile? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([orderId, createdAt])
+  @@map("order_events")
+}
+
+// ---------------------------------------------------------------- payments
+
+/// One attempt at collecting money for an order.
+///
+/// A row per attempt rather than a column on the order: a customer whose card
+/// is declined tries again by transfer, and both attempts have to survive for
+/// a dispute to be answerable. `orders.payment_status` stays the quick answer
+/// the kitchen board reads; this table is the ledger behind it.
+model Payment {
+  id      String @id @default(uuid()) @db.Uuid
+  orderId String @map("order_id") @db.Uuid
+
+  provider PaymentProvider @default(PAYSTACK)
+
+  /// Our reference, generated here and sent to Paystack. Unique because it is
+  /// what a webhook arriving twice is de-duplicated on.
+  reference  String  @unique
+  /// Paystack's own transaction id, known only once the charge is attempted.
+  providerId String? @map("provider_id")
+
+  status  PaymentStatus  @default(UNPAID)
+  /// How Paystack says it was paid: card, bank_transfer, ussd, qr, ...
+  channel String?
+  /// The same thing mapped onto our own enum for the cashier's screen.
+  method  PaymentMethod?
+
+  /// Kobo — Paystack's minor unit. Stored as the integer we actually sent so
+  /// no rounding can drift between the charge and the order total.
+  amount   Int
+  currency String @default("NGN")
+
+  /// Where to send the customer to pay. Expires; re-initialising makes a new one.
+  authorizationUrl String? @map("authorization_url")
+  accessCode       String? @map("access_code")
+
+  paidAt        DateTime? @map("paid_at")
+  failureReason String?   @map("failure_reason")
+  /// The last verify/webhook body as received, kept verbatim for disputes.
+  rawResponse   Json?     @map("raw_response")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@index([status])
+  @@map("payments")
+}
+
+// ---------------------------------------------------------------- promos
+
+/// A promotional slide on the storefront carousel.
+///
+/// Offers carry their own validity window because they always expire — an
+/// offer hardcoded into the frontend bundle outlives its own deadline and has
+/// to be chased down by a developer. A manager sets the dates here instead.
+model Promotion {
+  id       String  @id @default(uuid()) @db.Uuid
+  /// Small line above the headline, e.g. "Small chops".
+  kicker   String
+  /// The shout, e.g. "FREE".
+  headline String
+  /// The asterisked condition under the rule.
+  terms    String?
+
+  ctaLabel String? @map("cta_label")
+  /// Relative path within the site, e.g. "/menu".
+  ctaHref  String? @map("cta_href")
+  imageUrl String? @map("image_url")
+
+  position Int     @default(0)
+  isActive Boolean @default(true) @map("is_active")
+
+  /// Null means "no bound" on that side of the window.
+  startsAt DateTime? @map("starts_at")
+  endsAt   DateTime? @map("ends_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([isActive, position])
+  @@map("promotions")
+}
+
+/// A guest review shown on the storefront.
+///
+/// Stored rather than hardcoded so the rating summary above the carousel is
+/// computed from what is actually published, instead of a number in the
+/// markup that quietly goes stale.
+model Testimonial {
+  id String @id @default(uuid()) @db.Uuid
+
+  authorName String  @map("author_name")
+  /// "Food blogger", "Regular since 2019" — optional context under the name.
+  authorRole String? @map("author_role")
+  quote      String
+
+  /// 1-5. Averaged for the headline figure.
+  rating    Int     @default(5)
+  avatarUrl String? @map("avatar_url")
+
+  position    Int     @default(0)
+  isPublished Boolean @default(true) @map("is_published")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([isPublished, position])
+  @@map("testimonials")
+}
+
+/// A past promotion or event, shown in the full-bleed showcase carousel.
+///
+/// Separate from Promotion: that one is a live offer with a validity window,
+/// this is a gallery of work already done, which never expires.
+model Showcase {
+  id String @id @default(uuid()) @db.Uuid
+
+  title String
+  /// Small line above the title — a venue, branch or occasion.
+  place String?
+  blurb String?
+
+  imageUrl String @map("image_url")
+
+  ctaLabel String? @map("cta_label")
+  ctaHref  String? @map("cta_href")
+
+  /// When it ran. Shown on the thumbnail when set.
+  happenedAt DateTime? @map("happened_at")
+
+  position    Int     @default(0)
+  isPublished Boolean @default(true) @map("is_published")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([isPublished, position])
+  @@map("showcases")
+}
