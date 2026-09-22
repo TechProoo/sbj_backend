@@ -15,7 +15,8 @@
     "prisma:studio": "prisma studio",
     "prisma:push": "prisma db push",
     "seed": "ts-node prisma/seed.ts",
-    "create-staff": "ts-node -r dotenv/config scripts/create-staff.ts"
+    "create-staff": "ts-node -r dotenv/config scripts/create-staff.ts",
+    "push-keys": "ts-node scripts/push-keys.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
@@ -35,13 +36,15 @@
     "jose": "^6.1.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.10",
     "@nestjs/schematics": "^11.0.8",
     "@types/express": "^5.0.3",
     "@types/node": "^24.5.2",
+    "@types/web-push": "^3.6.4",
     "dotenv": "^18.0.0",
     "prisma": "^6.16.1",
     "ts-node": "^10.9.2",

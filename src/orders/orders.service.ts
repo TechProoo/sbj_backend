@@ -17,6 +17,7 @@ import {
 } from '@prisma/client';
 import { ORDER_EVENTS, OrdersGateway } from '../events/orders.gateway';
 import { PrismaService } from '../prisma/prisma.service';
+import { PushService } from '../push/push.service';
 import { CreateCounterOrderDto } from './dto/create-counter-order.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { QueryOrdersDto } from './dto/query-orders.dto';
@@ -55,6 +56,7 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly gateway: OrdersGateway,
+    private readonly push: PushService,
   ) {}
 
   // ------------------------------------------------------------ checkout
@@ -496,6 +498,9 @@ export class OrdersService {
     });
 
     this.gateway.emitOrderUpdated(order, ORDER_EVENTS.statusChanged);
+
+    // Not awaited: a push that fails must not fail the bump that caused it.
+    void this.push.notifyOrderStatus(order.id, order.orderNumber, dto.status);
     return order;
   }
 
@@ -529,6 +534,11 @@ export class OrdersService {
     });
 
     this.gateway.emitOrderUpdated(order, ORDER_EVENTS.cancelled);
+    void this.push.notifyOrderStatus(
+      order.id,
+      order.orderNumber,
+      OrderStatus.CANCELLED,
+    );
     return order;
   }
 

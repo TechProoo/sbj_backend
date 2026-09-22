@@ -7,6 +7,7 @@ import { SupabaseAuthGuard } from './common/guards/supabase-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import configuration from './config/configuration';
 import { EventsModule } from './events/events.module';
+import { FeedModule } from './feed/feed.module';
 import { HealthModule } from './health/health.module';
 import { KitchenModule } from './kitchen/kitchen.module';
 import { MenuModule } from './menu/menu.module';
@@ -14,6 +15,7 @@ import { OrdersModule } from './orders/orders.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { PromotionsModule } from './promotions/promotions.module';
+import { PushModule } from './push/push.module';
 import { ShowcaseModule } from './showcase/showcase.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { TestimonialsModule } from './testimonials/testimonials.module';
@@ -26,11 +28,13 @@ import { TestimonialsModule } from './testimonials/testimonials.module';
     AuthModule,
     AdminModule,
     EventsModule,
+    FeedModule,
     MenuModule,
     OrdersModule,
     PaymentsModule,
     KitchenModule,
     PromotionsModule,
+    PushModule,
     TestimonialsModule,
     ShowcaseModule,
     HealthModule,

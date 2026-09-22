@@ -87,6 +87,7 @@ model StaffProfile {
 
   claimedOrders Order[]      @relation("OrderClaimedBy")
   orderEvents   OrderEvent[]
+  feedPosts     FeedPost[]
 
   @@index([role, isActive])
   @@map("staff_profiles")
@@ -264,11 +265,12 @@ model Order {
   cancelReason String?   @map("cancel_reason")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  customer  Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  address   Address?      @relation(fields: [addressId], references: [id], onDelete: SetNull)
-  claimedBy StaffProfile? @relation("OrderClaimedBy", fields: [claimedById], references: [id], onDelete: SetNull)
+  customer  Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  address   Address?           @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  claimedBy StaffProfile?      @relation("OrderClaimedBy", fields: [claimedById], references: [id], onDelete: SetNull)
   items     OrderItem[]
   events    OrderEvent[]
+  pushSubs  PushSubscription[]
   payments  Payment[]
 
   @@index([status, placedAt])
@@ -470,4 +472,67 @@ model Showcase {
 
   @@index([isPublished, position])
   @@map("showcases")
+}
+
+/// A browser that asked to be told when an order moves.
+///
+/// Tied to the order rather than an account: checkout is guest-only, so the
+/// order someone is watching is the only identity available. One device can
+/// subscribe to several orders, and one order can have several devices.
+model PushSubscription {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// The push service URL for this browser. Unique per device per browser.
+  endpoint String
+  /// Keys from the browser's PushSubscription, needed to encrypt payloads.
+  p256dh   String
+  auth     String
+
+  orderId String @map("order_id") @db.Uuid
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  /// Cleared once the order is done, or when the push service says the
+  /// endpoint is gone.
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// The same device subscribing twice to one order is one row.
+  @@unique([endpoint, orderId])
+  @@index([orderId, isActive])
+  @@map("push_subscriptions")
+}
+
+// ---------------------------------------------------------------- the feed
+
+/// What a post is about. Promotions get the accent treatment in the app;
+/// gist is everything else the kitchen wants to say.
+enum FeedKind {
+  PROMO
+  GIST
+}
+
+/// A post on the customer-facing feed. One image and a caption — the kitchen
+/// writes these on a phone between services, so the shape stays small.
+model FeedPost {
+  id      String   @id @default(uuid()) @db.Uuid
+  kind    FeedKind @default(GIST)
+  caption String
+
+  /// Public URL served to the app.
+  imageUrl  String @map("image_url")
+  /// Object path inside the storage bucket, kept so deleting the post can
+  /// delete the file too rather than orphaning it.
+  imagePath String @map("image_path")
+
+  /// Unpublishing hides a post from customers without destroying it.
+  isPublished Boolean @default(true) @map("is_published")
+
+  authorId String?       @map("author_id") @db.Uuid
+  author   StaffProfile? @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([isPublished, createdAt])
+  @@map("feed_posts")
 }

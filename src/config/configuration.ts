@@ -9,6 +9,8 @@ export interface AppConfig {
     jwtSecret: string;
     /// Storage bucket holding menu photography.
     storageBucket: string;
+    /// Storage bucket holding feed images.
+    feedBucket: string;
   };
   orders: {
     /// Flat delivery fee in Naira until zone-based pricing exists.
@@ -16,6 +18,13 @@ export interface AppConfig {
     /// Percentage of subtotal, e.g. 2.5 for 2.5%.
     serviceFeePercent: number;
     minOrderTotal: number;
+  };
+  push: {
+    /// VAPID pair. Generate with `npm run push-keys`.
+    publicKey: string;
+    privateKey: string;
+    /// A mailto: or https: URL identifying this app to the push service.
+    subject: string;
   };
   paystack: {
     secretKey: string;
@@ -54,11 +63,17 @@ export default (): AppConfig => ({
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
     jwtSecret: process.env.SUPABASE_JWT_SECRET ?? '',
     storageBucket: process.env.SUPABASE_STORAGE_BUCKET ?? 'menu',
+    feedBucket: process.env.SUPABASE_FEED_BUCKET ?? 'feed',
   },
   orders: {
     deliveryFee: num(process.env.DELIVERY_FEE, 1500),
     serviceFeePercent: num(process.env.SERVICE_FEE_PERCENT, 0),
     minOrderTotal: num(process.env.MIN_ORDER_TOTAL, 0),
+  },
+  push: {
+    publicKey: process.env.VAPID_PUBLIC_KEY ?? '',
+    privateKey: process.env.VAPID_PRIVATE_KEY ?? '',
+    subject: process.env.VAPID_SUBJECT ?? 'mailto:orders@sbjfoods.com',
   },
   paystack: {
     secretKey: process.env.PAYSTACK_SECRET_KEY ?? '',

@@ -49,6 +49,35 @@ export class SupabaseService implements OnModuleInit {
     return data.publicUrl;
   }
 
+  /*
+   * Puts a file in a public bucket and hands back both the path and the URL.
+   *
+   * The path is what deletion needs later; the URL is what the app renders.
+   * Callers keep both, so removing a post can remove its image too rather
+   * than leaving the bucket filling with orphans.
+   */
+  async uploadPublic(
+    bucket: string,
+    path: string,
+    body: Buffer,
+    contentType: string,
+  ): Promise<{ path: string; url: string }> {
+    const { error } = await this.getClient()
+      .storage.from(bucket)
+      .upload(path, body, { contentType, upsert: false });
+
+    if (error) throw new Error(error.message);
+
+    const { data } = this.getClient().storage.from(bucket).getPublicUrl(path);
+    return { path, url: data.publicUrl };
+  }
+
+  /// Best-effort removal. A missing object is not worth failing a delete over.
+  async removeObject(bucket: string, path: string): Promise<void> {
+    const { error } = await this.getClient().storage.from(bucket).remove([path]);
+    if (error) this.logger.warn(`Could not remove ${bucket}/${path}: ${error.message}`);
+  }
+
   /// Creates a Supabase auth user for a staff member. Used when an admin adds
   /// a cook to the kitchen dashboard rather than inviting them by email.
   async createStaffUser(
