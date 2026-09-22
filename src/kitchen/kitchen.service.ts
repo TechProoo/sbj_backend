@@ -16,7 +16,16 @@ const ticketInclude = {
     include: { modifiers: { select: { nameSnapshot: true } } },
     orderBy: { nameSnapshot: 'asc' },
   },
-  address: { select: { line1: true, city: true, landmark: true } },
+  address: {
+    select: {
+      line1: true,
+      city: true,
+      landmark: true,
+      latitude: true,
+      longitude: true,
+      accuracyMeters: true,
+    },
+  },
   claimedBy: { select: { id: true, fullName: true } },
 } satisfies Prisma.OrderInclude;
 

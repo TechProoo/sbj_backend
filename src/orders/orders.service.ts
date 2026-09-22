@@ -19,7 +19,7 @@ import { ORDER_EVENTS, OrdersGateway } from '../events/orders.gateway';
 import { PrismaService } from '../prisma/prisma.service';
 import { PushService } from '../push/push.service';
 import { CreateCounterOrderDto } from './dto/create-counter-order.dto';
-import { CreateOrderDto } from './dto/create-order.dto';
+import { CreateOrderDto, DeliveryAddressDto } from './dto/create-order.dto';
 import { QueryOrdersDto } from './dto/query-orders.dto';
 import {
   CancelOrderDto,
@@ -140,7 +140,7 @@ export class OrdersService {
     const address =
       dto.address && customer
         ? await this.prisma.address.create({
-            data: { ...dto.address, customerId: customer.id },
+            data: { ...buildAddress(dto.address), customerId: customer.id },
           })
         : null;
 
@@ -400,6 +400,18 @@ export class OrdersService {
         paymentStatus: true,
         paymentMethod: true,
         placedAt: true,
+        // Where it is going, so the customer can check it before it leaves —
+        // especially when they shared a pin and never typed a word of it.
+        address: {
+          select: {
+            line1: true,
+            city: true,
+            landmark: true,
+            latitude: true,
+            longitude: true,
+            accuracyMeters: true,
+          },
+        },
         items: {
           select: {
             id: true,
@@ -599,4 +611,30 @@ export class OrdersService {
     this.gateway.emitOrderUpdated(order);
     return order;
   }
+}
+
+/// A pin on its own is a complete address — but `line1` is what every ticket,
+/// printed slip and dispatch list reads, so it can never be empty. When the
+/// customer shared their location instead of typing, the coordinates become
+/// the line, which at least prints as something a person can act on.
+function buildAddress(address: DeliveryAddressDto) {
+  const hasPin = address.latitude !== undefined && address.longitude !== undefined;
+
+  return {
+    line1:
+      address.line1?.trim() ||
+      (hasPin
+        ? `Shared location (${address.latitude}, ${address.longitude})`
+        : 'Address not given'),
+    line2: address.line2,
+    city: address.city?.trim() || (hasPin ? 'Pinned' : 'Unknown'),
+    state: address.state,
+    landmark: address.landmark,
+    latitude: address.latitude,
+    longitude: address.longitude,
+    accuracyMeters:
+      address.accuracyMeters === undefined
+        ? undefined
+        : Math.round(address.accuracyMeters),
+  };
 }

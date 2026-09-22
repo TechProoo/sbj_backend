@@ -111,16 +111,29 @@ model Customer {
 }
 
 model Address {
-  id         String   @id @default(uuid()) @db.Uuid
-  customerId String   @map("customer_id") @db.Uuid
+  id         String  @id @default(uuid()) @db.Uuid
+  customerId String  @map("customer_id") @db.Uuid
   label      String?
   line1      String
   line2      String?
   city       String
   state      String?
   landmark   String?
-  isDefault  Boolean  @default(false) @map("is_default")
-  createdAt  DateTime @default(now()) @map("created_at")
+
+  /// Where the customer actually is, when they chose to share it rather than
+  /// describe it. Nigerian street addresses are unreliable and a rider ends up
+  /// phoning anyway; a pin is the one thing that removes that call.
+  ///
+  /// Decimal, not Float: 7 decimal places is ~1cm, and binary floating point
+  /// has no business holding a coordinate someone has to be found at.
+  latitude       Decimal? @db.Decimal(10, 7)
+  longitude      Decimal? @db.Decimal(10, 7)
+  /// GPS accuracy radius in metres, as the browser reported it. A pin claiming
+  /// 2000m is worth less than a landmark, and the kitchen should see that.
+  accuracyMeters Int?     @map("accuracy_meters")
+
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at")
 
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   orders   Order[]

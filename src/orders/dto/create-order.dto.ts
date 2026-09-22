@@ -6,6 +6,9 @@ import {
   IsEmail,
   IsEnum,
   IsInt,
+  IsLatitude,
+  IsLongitude,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -14,6 +17,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 
@@ -39,18 +43,23 @@ export class OrderItemInputDto {
   notes?: string;
 }
 
+/// A delivery address arrives one of two ways: described in words, or shared
+/// as a pin from the customer's phone. Either is enough on its own — which is
+/// why `line1` and `city` are required only when there are no coordinates.
 export class DeliveryAddressDto {
+  @ValidateIf((dto: DeliveryAddressDto) => !dto.hasPin())
   @IsString()
   @MinLength(3)
-  line1!: string;
+  line1?: string;
 
   @IsOptional()
   @IsString()
   line2?: string;
 
+  @ValidateIf((dto: DeliveryAddressDto) => !dto.hasPin())
   @IsString()
   @MinLength(2)
-  city!: string;
+  city?: string;
 
   @IsOptional()
   @IsString()
@@ -58,7 +67,29 @@ export class DeliveryAddressDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(200)
   landmark?: string;
+
+  /// Sent together or not at all — half a coordinate points at the Gulf of
+  /// Guinea, which is where (0, 0) is.
+  @ValidateIf((dto: DeliveryAddressDto) => dto.longitude !== undefined)
+  @IsLatitude()
+  latitude?: number;
+
+  @ValidateIf((dto: DeliveryAddressDto) => dto.latitude !== undefined)
+  @IsLongitude()
+  longitude?: number;
+
+  /// The browser's own accuracy estimate, in metres.
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100000)
+  accuracyMeters?: number;
+
+  hasPin(): boolean {
+    return this.latitude !== undefined && this.longitude !== undefined;
+  }
 }
 
 export class CreateOrderDto {
