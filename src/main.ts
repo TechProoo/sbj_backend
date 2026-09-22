@@ -35,8 +35,21 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks();
 
   const port = config.get<number>('port') ?? 4000;
-  await app.listen(port);
-  logger.log(`SBJ API listening on http://localhost:${port}/api`);
+
+  /*
+   * 0.0.0.0, not the default loopback.
+   *
+   * A container platform routes traffic to the container's own address; a
+   * server bound only to localhost answers nothing from outside it and the
+   * health check fails with no error in the logs to explain why.
+   */
+  await app.listen(port, '0.0.0.0');
+
+  const where =
+    config.get<string>('nodeEnv') === 'production'
+      ? `port ${port}`
+      : `http://localhost:${port}/api`;
+  logger.log(`SBJ API listening on ${where}`);
 }
 
 void bootstrap();

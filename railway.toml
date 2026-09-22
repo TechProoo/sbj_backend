@@ -1,0 +1,45 @@
+# SBJ Foods and Drinks — API, deployed on Railway.
+#
+# Railway reads this file from the service's root directory. If the service is
+# pointed at the repository root rather than this folder, set the service's
+# Root Directory to `/` only when this repo IS the backend repo — it is, so the
+# defaults below apply as written.
+#
+# Everything secret lives in Railway's own variables, never in this file.
+
+[build]
+builder = "NIXPACKS"
+
+# Nixpacks installs with `npm ci` first, which runs the `postinstall` hook and
+# generates the Prisma client. The client is generated from schema.prisma and
+# is deliberately not committed, so without that hook the build compiles
+# against a client that does not exist.
+buildCommand = "npm run build"
+
+[deploy]
+# Applies any migration the repo has that the database does not, before a
+# single request reaches the new version. `migrate deploy` never generates or
+# resets anything — it only plays forward what is already committed.
+#
+# It needs DIRECT_URL (port 5432): the pooled connection cannot run DDL.
+preDeployCommand = "npx prisma migrate deploy"
+
+# `nest start` is a dev command; the deployed server runs the compiled output.
+startCommand = "node dist/main"
+
+# The API answers this before it has a database — it reports `database: down`
+# rather than failing — so a deploy is not rolled back over a slow first
+# connection to Supabase.
+healthcheckPath = "/api/health"
+healthcheckTimeout = 120
+
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+# Deliberately one.
+#
+# The kitchen board is held open over a websocket (/realtime). Socket.IO keeps
+# its rooms in the memory of whichever instance accepted the connection, so a
+# second replica would serve half the kitchen an order the other half never
+# hears about. Scaling past one instance needs a shared adapter (Redis) first.
+numReplicas = 1

@@ -16,7 +16,8 @@
     "prisma:push": "prisma db push",
     "seed": "ts-node prisma/seed.ts",
     "create-staff": "ts-node -r dotenv/config scripts/create-staff.ts",
-    "push-keys": "ts-node scripts/push-keys.ts"
+    "push-keys": "ts-node scripts/push-keys.ts",
+    "postinstall": "prisma generate"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
@@ -49,5 +50,8 @@
     "prisma": "^6.16.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }
