@@ -372,8 +372,8 @@ const PROMOTIONS = [
   },
   {
     kicker: 'Free delivery',
-    headline: 'Ikeja',
-    terms: '* On orders above ₦5,000 to Ikeja and Yaba. Offer runs to {END}',
+    headline: 'On campus',
+    terms: '* On orders above ₦5,000 delivered inside UI. Offer runs to {END}',
     ctaLabel: 'Start an order',
     ctaHref: '/menu',
     imageUrl: '/menu/pounded-yam-egusi.jpg',
@@ -431,7 +431,7 @@ const TESTIMONIALS = [
     authorName: 'Adaeze O.',
     authorRole: 'SAMPLE — replace with a real review',
     quote:
-      'The jollof tastes like a party in Surulere. Ordered at 12:40, rider was at my gate before 1pm and it was still steaming.',
+      'The jollof tastes like a party. Ordered at 12:40, it got to my room in Indy before 1pm and it was still steaming.',
     rating: 5,
   },
   {
@@ -483,7 +483,7 @@ async function seedTestimonials(): Promise<number> {
 const SHOWCASE = [
   {
     title: 'Party Jollof',
-    place: 'SBJ Kitchen · Lagos',
+    place: 'SBJ Kitchen · Indy Hall, UI',
     blurb:
       'Smoky, party-style, cooked in the big pot from morning. The plate that built the name.',
     imageUrl: '/menu/jollof-rice.jpg',
