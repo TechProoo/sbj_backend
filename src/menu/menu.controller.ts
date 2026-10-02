@@ -78,20 +78,20 @@ export class MenuController {
 
   /// A dish photo. Returns the public URL to put in the item's `imageUrl`.
   @Post('items/image')
-  @Roles(StaffRole.MANAGER)
+  @Roles(StaffRole.KITCHEN, StaffRole.MANAGER)
   @UseInterceptors(FileInterceptor('image'))
   uploadImage(@UploadedFile() image: UploadedImage | undefined) {
     return this.menu.uploadImage(image);
   }
 
   @Post('items')
-  @Roles(StaffRole.MANAGER)
+  @Roles(StaffRole.KITCHEN, StaffRole.MANAGER)
   createItem(@Body() dto: CreateMenuItemDto) {
     return this.menu.createItem(dto);
   }
 
   @Patch('items/:id')
-  @Roles(StaffRole.MANAGER)
+  @Roles(StaffRole.KITCHEN, StaffRole.MANAGER)
   updateItem(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateMenuItemDto,
