@@ -109,7 +109,9 @@ export class OrdersService {
       throw new BadRequestException('Dine-in orders need a table number');
     }
 
-    const lines = await this.priceLines(dto);
+    // An order taken offline was sold and cooked before the server heard of it;
+    // refusing it now because the dish has since sold out would lose the sale.
+    const lines = await this.priceLines(dto, Boolean(offline));
     const subtotal = lines.reduce(
       (sum, line) => sum.add(line.lineTotal),
       new Prisma.Decimal(0),
@@ -297,7 +299,7 @@ export class OrdersService {
 
   /// Recomputes every price from the database. The client sends ids and
   /// quantities only — a cart total posted from a browser is a suggestion.
-  private async priceLines(dto: CreateOrderDto) {
+  private async priceLines(dto: CreateOrderDto, allowSoldOut = false) {
     const menuItemIds = [...new Set(dto.items.map((item) => item.menuItemId))];
 
     const menuItems = await this.prisma.menuItem.findMany({
@@ -316,7 +318,7 @@ export class OrdersService {
       if (!menuItem) {
         throw new BadRequestException(`Menu item ${line.menuItemId} not found`);
       }
-      if (!menuItem.isAvailable) {
+      if (!menuItem.isAvailable && !allowSoldOut) {
         throw new BadRequestException(`${menuItem.name} is sold out`);
       }
 
@@ -333,7 +335,7 @@ export class OrdersService {
             `Option ${id} is not available on ${menuItem.name}`,
           );
         }
-        if (!modifier.isAvailable) {
+        if (!modifier.isAvailable && !allowSoldOut) {
           throw new BadRequestException(`${modifier.name} is sold out`);
         }
         return modifier;
