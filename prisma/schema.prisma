@@ -267,6 +267,16 @@ model Order {
   notes       String?
   tableNumber String? @map("table_number")
 
+  /// Minted by the kitchen screen for an order taken with no connection. A
+  /// retried upload carries the same value, so it can never create the order
+  /// twice.
+  clientRef  String?   @unique @map("client_ref")
+  /// The number the offline screen printed on the customer's slip (OFF-007),
+  /// kept so the paper in someone's hand can still be matched to this order.
+  offlineRef String?   @map("offline_ref")
+  /// When an offline order reached the server. Null for everything taken live.
+  syncedAt   DateTime? @map("synced_at")
+
   /// Set once a cook accepts the ticket; the dashboard clock runs off startedAt.
   claimedById  String?   @map("claimed_by_id") @db.Uuid
   placedAt     DateTime  @default(now()) @map("placed_at")

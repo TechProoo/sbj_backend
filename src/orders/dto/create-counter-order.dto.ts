@@ -4,9 +4,11 @@ import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
+  IsDateString,
   IsEnum,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   MaxLength,
   MinLength,
@@ -75,4 +77,23 @@ export class CreateCounterOrderDto {
   @IsString()
   @MaxLength(500)
   notes?: string;
+
+  /// Set by the kitchen screen when it took the order with no connection.
+  /// Sending the same value twice returns the first order instead of making a
+  /// second, which is what makes a retried upload safe.
+  @IsOptional()
+  @IsUUID()
+  clientRef?: string;
+
+  /// The OFF-007 style number the offline screen printed on the slip.
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  offlineRef?: string;
+
+  /// When the order was actually taken, for an order that sat on the device
+  /// until the connection came back.
+  @IsOptional()
+  @IsDateString()
+  placedAt?: string;
 }

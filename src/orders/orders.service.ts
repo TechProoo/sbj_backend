@@ -81,6 +81,10 @@ export class OrdersService {
       skipMinimum?: boolean;
       /// Staff are standing next to the customer; a table number is a nicety.
       requireTableNumber?: boolean;
+      /// Minted by the kitchen screen; a repeat upload finds the first order.
+      clientRef?: string;
+      /// Present only for an order the screen took while it had no connection.
+      offline?: { offlineRef?: string; placedAt: Date };
     } = {},
   ) {
     const {
@@ -89,7 +93,10 @@ export class OrdersService {
       markPaid = false,
       skipMinimum = false,
       requireTableNumber = true,
+      clientRef,
+      offline,
     } = options;
+    const placedAt = offline?.placedAt ?? new Date();
 
     if (dto.type === OrderType.DELIVERY && !dto.address) {
       throw new BadRequestException('Delivery orders need an address');
@@ -152,7 +159,12 @@ export class OrdersService {
             channel,
             type: dto.type,
             status: autoConfirm ? OrderStatus.CONFIRMED : OrderStatus.PENDING,
-            confirmedAt: autoConfirm ? new Date() : null,
+            placedAt,
+            confirmedAt: autoConfirm ? placedAt : null,
+            ...(clientRef ? { clientRef } : {}),
+            ...(offline
+              ? { offlineRef: offline.offlineRef, syncedAt: new Date() }
+              : {}),
             paymentStatus: markPaid ? PaymentStatus.PAID : PaymentStatus.UNPAID,
             customerId: customer?.id,
             addressId: address?.id,
@@ -184,14 +196,16 @@ export class OrdersService {
                   ? OrderStatus.CONFIRMED
                   : OrderStatus.PENDING,
                 note: autoConfirm
-                  ? `Taken at the counter${markPaid ? ', paid' : ', unpaid'}`
+                  ? `Taken at the counter${offline ? ' while offline' : ''}${markPaid ? ', paid' : ', unpaid'}`
                   : 'Order placed',
               },
             },
           },
           include: orderInclude,
         }),
-      () => this.nextDailySequence(),
+      () => this.nextDailySequence(placedAt),
+      5,
+      placedAt,
     );
 
     this.gateway.emitOrderCreated(order);
@@ -209,6 +223,40 @@ export class OrdersService {
   async createManual(dto: CreateCounterOrderDto, actorId: string | null) {
     const paid = dto.paid ?? false;
 
+    // The same offline order uploaded twice — a retry after a dropped
+    // response — is answered with the order the first upload made.
+    if (dto.clientRef) {
+      const existing = await this.prisma.order.findUnique({
+        where: { clientRef: dto.clientRef },
+        include: orderInclude,
+      });
+      if (existing) return existing;
+    }
+
+    try {
+      return await this.placeManual(dto, actorId, paid);
+    } catch (error) {
+      // Two uploads of one order racing each other: the loser finds the winner.
+      if (
+        dto.clientRef &&
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        const existing = await this.prisma.order.findUnique({
+          where: { clientRef: dto.clientRef },
+          include: orderInclude,
+        });
+        if (existing) return existing;
+      }
+      throw error;
+    }
+  }
+
+  private async placeManual(
+    dto: CreateCounterOrderDto,
+    actorId: string | null,
+    paid: boolean,
+  ) {
     const order = await this.create(
       {
         // A queue moves faster than a keyboard; both of these are optional at
@@ -230,6 +278,14 @@ export class OrdersService {
         markPaid: paid,
         skipMinimum: true,
         requireTableNumber: false,
+        clientRef: dto.clientRef,
+        // An offline order says so by carrying its slip number.
+        offline: dto.offlineRef
+          ? {
+              offlineRef: dto.offlineRef,
+              placedAt: this.offlinePlacedAt(dto.placedAt),
+            }
+          : undefined,
       },
     );
 
@@ -320,11 +376,26 @@ export class OrdersService {
     });
   }
 
-  private async nextDailySequence(): Promise<number> {
+  private async nextDailySequence(day = new Date()): Promise<number> {
+    const from = startOfDay(day);
+    const to = new Date(from);
+    to.setDate(to.getDate() + 1);
     const count = await this.prisma.order.count({
-      where: { placedAt: { gte: startOfDay() } },
+      where: { placedAt: { gte: from, lt: to } },
     });
     return count + 1;
+  }
+
+  /// A device clock is not evidence. A timestamp from the future, or one more
+  /// than a week old, is a wrong clock rather than a real order time, so it
+  /// falls back to now.
+  private offlinePlacedAt(value?: string): Date {
+    const now = Date.now();
+    const parsed = value ? Date.parse(value) : NaN;
+    if (Number.isNaN(parsed)) return new Date(now);
+    if (parsed > now + 5 * 60_000) return new Date(now);
+    if (parsed < now - 7 * 24 * 3_600_000) return new Date(now);
+    return new Date(parsed);
   }
 
   // ------------------------------------------------------------ reads

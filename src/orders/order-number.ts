@@ -21,12 +21,15 @@ export async function withOrderNumberRetry<T>(
   attempt: (orderNumber: string) => Promise<T>,
   nextSequence: () => Promise<number>,
   maxAttempts = 5,
+  /// The service day the number belongs to. An order that waited offline is
+  /// numbered into the day it was taken, not the day it reached the server.
+  day = new Date(),
 ): Promise<T> {
   let lastError: unknown;
 
   for (let i = 0; i < maxAttempts; i += 1) {
     const sequence = (await nextSequence()) + i;
-    const orderNumber = formatOrderNumber(new Date(), sequence);
+    const orderNumber = formatOrderNumber(day, sequence);
     try {
       return await attempt(orderNumber);
     } catch (error) {

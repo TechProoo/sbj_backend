@@ -8,7 +8,10 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { StaffRole } from '@prisma/client';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -21,6 +24,13 @@ import {
   UpdateMenuItemDto,
 } from './dto/menu.dto';
 import { MenuService } from './menu.service';
+
+/// What multer hands back; typed here rather than pulling in @types/multer.
+interface UploadedImage {
+  buffer: Buffer;
+  mimetype: string;
+  size: number;
+}
 
 @Controller('menu')
 export class MenuController {
@@ -64,6 +74,14 @@ export class MenuController {
     @Body() dto: UpdateCategoryDto,
   ) {
     return this.menu.updateCategory(id, dto);
+  }
+
+  /// A dish photo. Returns the public URL to put in the item's `imageUrl`.
+  @Post('items/image')
+  @Roles(StaffRole.MANAGER)
+  @UseInterceptors(FileInterceptor('image'))
+  uploadImage(@UploadedFile() image: UploadedImage | undefined) {
+    return this.menu.uploadImage(image);
   }
 
   @Post('items')

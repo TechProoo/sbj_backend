@@ -1,4 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'node:crypto';
+import { SupabaseService } from '../supabase/supabase.service';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { uniqueSlug } from '../common/utils/slug';
@@ -27,6 +30,14 @@ const itemInclude = {
   },
 } satisfies Prisma.MenuItemInclude;
 
+const IMAGE_TYPES = new Map<string, string>([
+  ['image/jpeg', 'jpg'],
+  ['image/png', 'png'],
+  ['image/webp', 'webp'],
+  ['image/avif', 'avif'],
+]);
+const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
+
 type Storefront = Awaited<ReturnType<MenuService['loadStorefrontMenu']>>;
 
 /// How long the storefront menu may be served from memory.
@@ -44,7 +55,34 @@ export class MenuService {
   /// Held so a burst of cold requests triggers one query, not one each.
   private inFlight: Promise<Storefront> | null = null;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+    private readonly supabase: SupabaseService,
+  ) {}
+
+  /// Stores a dish photo in the menu bucket and returns its public URL.
+  async uploadImage(
+    file: { buffer: Buffer; mimetype: string; size: number } | undefined,
+  ): Promise<{ url: string }> {
+    if (!file) throw new BadRequestException('Attach an image');
+    const extension = IMAGE_TYPES.get(file.mimetype);
+    if (!extension) {
+      throw new BadRequestException('Images only — JPEG, PNG, WebP or AVIF');
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      throw new BadRequestException('That image is larger than 6MB');
+    }
+
+    const bucket = this.config.get<string>('supabase.storageBucket') ?? 'menu';
+    const { url } = await this.supabase.uploadPublic(
+      bucket,
+      `items/${randomUUID()}.${extension}`,
+      file.buffer,
+      file.mimetype,
+    );
+    return { url };
+  }
 
   async getStorefrontMenu(): Promise<Storefront> {
     if (this.cache && Date.now() - this.cache.at < MENU_TTL_MS) {

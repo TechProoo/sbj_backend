@@ -14,9 +14,9 @@ const LIVE_STATUSES: OrderStatus[] = [
 /// How many days of history the trend line covers, today included.
 const TREND_DAYS = 7;
 
-/// Rows on the recent-orders table. Enough to see the shape of a service
-/// without turning the panel into an order browser.
-const RECENT_LIMIT = 25;
+/// Rows on the day's order ledger. A busy day fits comfortably, and the panel
+/// searches and filters them in the browser, so it never needs a second fetch.
+const RECENT_LIMIT = 200;
 
 function endOfDay(date: Date): Date {
   const copy = startOfDay(date);
@@ -85,6 +85,7 @@ export class AdminService {
       trend,
       menuCounts,
       soldOut,
+      offline,
     ] = await Promise.all([
       this.prisma.order.aggregate({
         where: soldOnDay,
@@ -178,6 +179,11 @@ export class AdminService {
           id: true,
           orderNumber: true,
           customerName: true,
+          customerPhone: true,
+          tableNumber: true,
+          channel: true,
+          offlineRef: true,
+          syncedAt: true,
           type: true,
           status: true,
           paymentStatus: true,
@@ -186,6 +192,9 @@ export class AdminService {
           placedAt: true,
           completedAt: true,
           claimedBy: { select: { fullName: true } },
+          items: {
+            select: { nameSnapshot: true, quantity: true },
+          },
         },
       }),
 
@@ -221,6 +230,13 @@ export class AdminService {
         where: { isAvailable: false },
         orderBy: { name: 'asc' },
         select: { id: true, name: true, category: { select: { name: true } } },
+      }),
+
+      // Orders the kitchen took with no connection and uploaded afterwards.
+      this.prisma.order.aggregate({
+        where: { ...soldOnDay, syncedAt: { not: null } },
+        _count: { _all: true },
+        _sum: { total: true },
       }),
     ]);
 
@@ -332,6 +348,11 @@ export class AdminService {
       })),
 
       staff,
+
+      offline: {
+        orders: offline._count._all,
+        revenue: money(offline._sum.total),
+      },
 
       menu: {
         available:
